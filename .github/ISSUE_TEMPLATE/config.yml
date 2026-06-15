@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Not a substrate change? Find the right home
+    url: https://github.com/loboroboto/hermes-interprets-coala/blob/main/CONTRIBUTING.md
+    about: >-
+      Operationalization — how a particular deployment runs this substrate (runner/host
+      wiring, fleet orchestration, environment/secrets, the image that composes it) —
+      belongs in that consumer's own repo, not here. See CONTRIBUTING for the boundary test.

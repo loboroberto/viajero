@@ -1,0 +1,53 @@
+name: Substrate change (CoALA / Hermes architecture)
+description: A change to the substrate itself — propagates to every consumer that pins this substrate.
+title: "[substrate] "
+labels: ["scope: upstream"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repo is the **CoALA-aligned substrate**. File issues here only for changes
+        that belong to the substrate itself — they reach consumers when each bumps the
+        substrate release it pins.
+
+        Operationalization — how a particular deployment *runs* this substrate (runner/host
+        wiring, fleet orchestration, environment/secrets, the image that composes it) —
+        belongs in that consumer's own repo, not here. See
+        [CONTRIBUTING.md](https://github.com/loboroboto/hermes-interprets-coala/blob/main/CONTRIBUTING.md)
+        for the boundary test.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Substrate area
+      description: Which part of the substrate does this touch?
+      options:
+        - AGENTS.md (system prompt / memory schema / decision cycle)
+        - SOUL.md (personality / voice)
+        - hermes.toml (provider, model, toolsets, peers, channels)
+        - mcp.json (MCP grounding-action surfaces)
+        - skills/ (seed procedural memory)
+        - bootstrap / home provisioning
+        - Other / cross-cutting
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What should change?
+      description: Describe the substrate change and the CoALA primitive(s) it touches.
+    validations:
+      required: true
+  - type: textarea
+    id: why-upstream
+    attributes:
+      label: Why does this belong in the substrate?
+      description: Confirm this is substrate every consumer would want — not deployment-specific operationalization.
+    validations:
+      required: true
+  - type: textarea
+    id: consumer-impact
+    attributes:
+      label: Consumer impact (optional)
+      description: After this lands and is tagged vYYYY.M.D, what should consumers do (e.g. bump the substrate release they pin)?
+    validations:
+      required: false
