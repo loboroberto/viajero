@@ -1,0 +1,53 @@
+name: Substrate change (CoALA / Hermes architecture)
+description: A change to the substrate itself — propagates to every downstream consumer via the pinned HCOALA_REF.
+title: "[substrate] "
+labels: ["scope: upstream"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repo is the **upstream CoALA-aligned substrate**. File issues here only
+        for changes that belong to the substrate itself — they propagate to downstream
+        consumers (e.g. `hcoala-in-paperclip`) when they bump the pinned `HCOALA_REF`.
+
+        Operationalization — fleet, companies, onboarder/reconciler, runner/gateway,
+        Railway/env, the composing Dockerfile — belongs in
+        [hcoala-in-paperclip](https://github.com/loboroboto/hcoala-in-paperclip/issues/new/choose).
+        See [CONTRIBUTING.md](https://github.com/loboroboto/hermes-interprets-coala/blob/main/CONTRIBUTING.md)
+        for the boundary test.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Substrate area
+      description: Which part of the substrate does this touch?
+      options:
+        - AGENTS.md (system prompt / memory schema / decision cycle)
+        - SOUL.md (personality / voice)
+        - hermes.toml (provider, model, toolsets, peers, channels)
+        - mcp.json (MCP grounding-action surfaces)
+        - skills/ (seed procedural memory)
+        - bootstrap / home provisioning
+        - Other / cross-cutting
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What should change?
+      description: Describe the substrate change and the CoALA primitive(s) it touches.
+    validations:
+      required: true
+  - type: textarea
+    id: why-upstream
+    attributes:
+      label: Why does this belong upstream?
+      description: Confirm this is substrate every consumer would want — not Paperclip-specific operationalization.
+    validations:
+      required: true
+  - type: textarea
+    id: downstream-impact
+    attributes:
+      label: Downstream impact (optional)
+      description: After this lands and is tagged vYYYY.M.D, what should consumers do (e.g. bump HCOALA_REF)?
+    validations:
+      required: false

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Paperclip operationalization (downstream — hcoala-in-paperclip)
+    url: https://github.com/loboroboto/hcoala-in-paperclip/issues/new/choose
+    about: >-
+      Fleet, companies, onboarder/reconciler, runner/gateway, Railway/env, or
+      the composing Dockerfile? That is downstream operationalization — file it
+      in hcoala-in-paperclip, not here.
