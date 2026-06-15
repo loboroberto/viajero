@@ -1,0 +1,68 @@
+# railway.toml — Railway service configuration for the Hermes Agent.
+#
+# This file lives at the repo root and tells Railway how to build and run.
+# Volume configuration is done in the Railway dashboard (the volume mount
+# path must match /data — see hermes-config/hermes.toml).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "docker/Dockerfile"
+
+[deploy]
+# Healthcheck — the admin server (server.py from the pinned template clone)
+# exposes /health as a public, unauthenticated route. The agent itself sits
+# behind cookie auth on every other route.
+# Timeout is generous because the cold-start image pulls hermes + extras
+# + web + ui-tui bundles; first boot can take a couple of minutes.
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Start command — overridden here if you want non-default (e.g. a specific
+# messaging gateway). Leave blank to use the Dockerfile CMD.
+# startCommand = "hermes serve --gateway telegram"
+
+# -----------------------------------------------------------------------------
+# Volume note:
+#
+# Configure the volume in the Railway dashboard:
+#   Mount path: /data
+#   Size: at least 1GB (state.db + skills + trajectories grow over time)
+#
+# The volume is what makes the agent durable across redeploys. Without it,
+# every redeploy wipes episodic memory and learned skills.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Required environment variables (set in Railway dashboard):
+#
+#   NOUS_API_KEY              — primary LLM provider (or OPENROUTER_API_KEY /
+#                               OPENAI_API_KEY depending on hermes.toml)
+#
+# Recommended (web admin login):
+#   ADMIN_USERNAME            — admin username for the dashboard. Defaults
+#                               to "admin" if unset.
+#   ADMIN_PASSWORD            — admin password. If unset, a random 16-char
+#                               token is generated on boot and printed to
+#                               deploy logs (look for "Admin credentials").
+#                               Cookie secret regenerates on every boot, so
+#                               redeploys invalidate all sessions.
+#
+# Optional:
+#   GITHUB_TOKEN              — for GitHub MCP
+#   RAILWAY_TOKEN             — for Railway MCP / CLI grounding
+#   TELEGRAM_BOT_TOKEN        — Telegram gateway
+#   DISCORD_BOT_TOKEN         — Discord gateway
+#   SLACK_BOT_TOKEN           — Slack gateway
+#   SENTRY_AUTH_TOKEN         — Sentry MCP for incident debugging
+#   HERMES_AUTH_JSON_BOOTSTRAP — JSON contents of a locally-generated
+#                               ~/.hermes/auth.json, written to the volume
+#                               on first boot. Use for OAuth-based providers
+#                               (xAI Grok SuperGrok, Gemini CLI, Qwen OAuth,
+#                               Claude Code) instead of an interactive
+#                               device flow.
+#   HERMES_FORCE_RESEED       — set to 1 to re-seed bundled skills from /app
+#                               on next boot (overwriting agent-authored
+#                               patches to seed skills)
+# -----------------------------------------------------------------------------
