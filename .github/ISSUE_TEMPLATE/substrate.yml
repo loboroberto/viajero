@@ -1,19 +1,19 @@
 name: Substrate change (CoALA / Hermes architecture)
-description: A change to the substrate itself — propagates to every downstream consumer via the pinned HCOALA_REF.
+description: A change to the substrate itself — propagates to every consumer that pins this substrate.
 title: "[substrate] "
 labels: ["scope: upstream"]
 body:
   - type: markdown
     attributes:
       value: |
-        This repo is the **upstream CoALA-aligned substrate**. File issues here only
-        for changes that belong to the substrate itself — they propagate to downstream
-        consumers (e.g. `hcoala-in-paperclip`) when they bump the pinned `HCOALA_REF`.
+        This repo is the **CoALA-aligned substrate**. File issues here only for changes
+        that belong to the substrate itself — they reach consumers when each bumps the
+        substrate release it pins.
 
-        Operationalization — fleet, companies, onboarder/reconciler, runner/gateway,
-        Railway/env, the composing Dockerfile — belongs in
-        [hcoala-in-paperclip](https://github.com/loboroboto/hcoala-in-paperclip/issues/new/choose).
-        See [CONTRIBUTING.md](https://github.com/loboroboto/hermes-interprets-coala/blob/main/CONTRIBUTING.md)
+        Operationalization — how a particular deployment *runs* this substrate (runner/host
+        wiring, fleet orchestration, environment/secrets, the image that composes it) —
+        belongs in that consumer's own repo, not here. See
+        [CONTRIBUTING.md](https://github.com/loboroboto/hermes-interprets-coala/blob/main/CONTRIBUTING.md)
         for the boundary test.
   - type: dropdown
     id: area
@@ -40,14 +40,14 @@ body:
   - type: textarea
     id: why-upstream
     attributes:
-      label: Why does this belong upstream?
-      description: Confirm this is substrate every consumer would want — not Paperclip-specific operationalization.
+      label: Why does this belong in the substrate?
+      description: Confirm this is substrate every consumer would want — not deployment-specific operationalization.
     validations:
       required: true
   - type: textarea
-    id: downstream-impact
+    id: consumer-impact
     attributes:
-      label: Downstream impact (optional)
-      description: After this lands and is tagged vYYYY.M.D, what should consumers do (e.g. bump HCOALA_REF)?
+      label: Consumer impact (optional)
+      description: After this lands and is tagged vYYYY.M.D, what should consumers do (e.g. bump the substrate release they pin)?
     validations:
       required: false
