@@ -117,6 +117,52 @@ RUN git clone --depth 1 --branch ${HERMES_REF} \
     npm run build && \
     rm -rf /opt/hermes-agent/.git /root/.npm
 
+# Curate the runtime's built-in skill catalog.
+#
+# The agent's /skills list is built from the VOLUME ($HERMES_HOME/skills) plus the
+# read-only external_dirs — NOT from /opt. The runtime ships ~168 skills under
+# /opt/hermes-agent/{skills,optional-skills} and skills_sync seeds the *bundled*
+# set onto the volume on boot, where it accumulates: sync never deletes, so the
+# volume balloons with mostly-irrelevant capabilities (creative/, gaming/,
+# mlops/, …). Pruning /opt at build time does NOT help — the runtime restores
+# /opt to the full set on boot, and /skills doesn't read /opt anyway.
+#
+# So we curate the SYNC SOURCE instead: build a dir with just the keep-list skills
+# and point skills_sync at it via HERMES_BUNDLED_SKILLS (honored by
+# tools/skills_sync._get_bundled_dir). Only these skills ever seed onto the
+# volume. /opt is left intact so optional-skills remain installable on demand.
+# bootstrap.sh then removes already-synced de-listed skills from existing volumes.
+# Viajero's OWN skills live in hermes-config/skills and load read-only via
+# skills.external_dirs — never seeded onto the volume (immutable but augmentable).
+COPY docker/keep-skills.txt /app/keep-skills.txt
+RUN set -eu; \
+    : "Snapshot the FULL runtime catalog (category/skill, flattened across both"; \
+    : "roots). bootstrap.sh uses it as the 'universe' of built-ins: a volume skill"; \
+    : "in the catalog but not in the keep-list is a de-listed built-in to prune;"; \
+    : "agent-authored skills are never in the catalog, so are always preserved."; \
+    for root in /opt/hermes-agent/skills /opt/hermes-agent/optional-skills; do \
+      [ -d "$root" ] || continue; \
+      find "$root" -name SKILL.md -printf '%h\n' | sed "s#^$root/##"; \
+    done | sort -u > /opt/hermes-agent/skill-catalog-full.txt; \
+    : "Build the curated sync source from the keep-list (both roots collapse into"; \
+    : "one dir at the same category/skill paths)."; \
+    clean=$(grep -vE '^[[:space:]]*(#|$)' /app/keep-skills.txt); \
+    mkdir -p /app/curated-skills; \
+    printf '%s\n' "$clean" | while IFS= read -r rel; do \
+      [ -n "$rel" ] || continue; \
+      for root in /opt/hermes-agent/skills /opt/hermes-agent/optional-skills; do \
+        if [ -d "$root/$rel" ]; then \
+          mkdir -p "/app/curated-skills/$rel"; \
+          cp -a "$root/$rel/." "/app/curated-skills/$rel/"; \
+          break; \
+        fi; \
+      done; \
+    done; \
+    echo "[curate-skills] catalog: $(wc -l < /opt/hermes-agent/skill-catalog-full.txt) built-ins | curated sync source:"; \
+    find /app/curated-skills -name SKILL.md -printf '  %h\n' 2>/dev/null | sort
+# skills_sync seeds ONLY this curated dir onto the volume.
+ENV HERMES_BUNDLED_SKILLS=/app/curated-skills
+
 # Install the Railway admin template. Clones at a pinned SHA (see
 # HERMES_ADMIN_REF above), installs its Python deps, and drops .git. The
 # server.py inside becomes our CMD; on boot it spawns `hermes gateway` +

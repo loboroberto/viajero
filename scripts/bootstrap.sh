@@ -80,6 +80,72 @@ log() { printf '[bootstrap] %s\n' "$*" >&2; }
 # under here on first /run by a downstream per-agent wrapper.
 mkdir -p /data/hermes/agents
 
+# ----------------------------------------------------------------------------
+# 2b. Migration — prune de-listed runtime built-ins from the volume.
+# ----------------------------------------------------------------------------
+# The agent's /skills list reads the VOLUME ($HERMES_HOME/skills) + external_dirs.
+# skills_sync seeds bundled skills onto the volume but NEVER deletes de-listed
+# ones, so a volume that earlier synced the full catalog keeps them. The image
+# now curates the sync SOURCE (HERMES_BUNDLED_SKILLS -> /app/curated-skills) so
+# future syncs stay curated, but already-synced skills persist on the volume —
+# remove them here. Discriminator: the full runtime catalog (universe of
+# built-ins) minus the keep-list allowlist. A volume skill is a stale built-in
+# iff it is in the catalog AND not in the allowlist; agent-authored skills are
+# never in the catalog, so are always preserved. NOTE: keying off the keep-list
+# (not live /opt) is deliberate — the runtime restores /opt to the full set on
+# boot, so deriving "keep" from /opt would match everything and prune nothing.
+# Idempotent. Set HERMES_SKIP_BUILTIN_RECONCILE=1 to opt out.
+# (The external_dirs patch + orphaned-shipped-skill removal arrive with the
+# hermes-config/skills port; this block only reconciles built-ins.)
+CATALOG_FULL="/opt/hermes-agent/skill-catalog-full.txt"
+KEEP_LIST="/app/keep-skills.txt"
+if [[ "${HERMES_SKIP_BUILTIN_RECONCILE:-0}" == "1" ]]; then
+  log "migration: built-in skill reconcile skipped (HERMES_SKIP_BUILTIN_RECONCILE=1)"
+elif [[ -d "$HERMES_DIR/skills" && -f "$CATALOG_FULL" && -f "$KEEP_LIST" ]]; then
+  python3 - "$HERMES_DIR/skills" "$CATALOG_FULL" "$KEEP_LIST" <<'PY' \
+    | while IFS= read -r line; do log "$line"; done || log "WARN: built-in reconcile skipped (error)"
+import os, shutil, sys
+
+vol_skills, catalog_path, keep_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def skill_dirs(root):
+    """rel dirs (category/skill) of every dir holding a SKILL.md under root."""
+    out = set()
+    if not os.path.isdir(root):
+        return out
+    for dp, _d, fs in os.walk(root):
+        if "SKILL.md" in fs:
+            rel = os.path.relpath(dp, root)
+            if rel != ".":
+                out.add(rel)
+    return out
+
+with open(catalog_path, encoding="utf-8") as fh:
+    universe = {ln.strip() for ln in fh if ln.strip()}
+
+keep = set()
+with open(keep_path, encoding="utf-8") as fh:
+    for ln in fh:
+        ln = ln.strip()
+        if ln and not ln.startswith("#"):
+            keep.add(ln)
+
+removed = 0
+for rel in sorted(skill_dirs(vol_skills)):
+    if rel in universe and rel not in keep:
+        shutil.rmtree(os.path.join(vol_skills, rel), ignore_errors=True)
+        print(f"migration: pruned de-listed built-in skills/{rel}")
+        removed += 1
+
+# Tidy up category dirs left empty by the prune (e.g. creative/ with no skills).
+for dp, _d, fs in os.walk(vol_skills, topdown=False):
+    if dp != vol_skills and not os.listdir(dp):
+        os.rmdir(dp)
+
+print(f"migration: built-in reconcile complete ({removed} de-listed built-in(s) pruned)")
+PY
+fi
+
 # Clear any stale gateway PID file left over from a previous container.
 # `hermes gateway` (spawned by the admin server) writes a pid file on
 # start but does not always remove it on SIGTERM. Since /data is a
