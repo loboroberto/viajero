@@ -14,12 +14,14 @@
 #
 # It seeds only the GENERIC, no-clobber pieces that every home needs:
 #   - the hermes subdir tree
-#   - .env (touched) + config.yaml (from the bundled example, if absent)
+#   - .env (touched) + config.yaml (prefer git-tracked template, fall back to
+#     the runtime's bundled example)
 #   - MEMORY.md / USER.md / PEERS.md (if absent)
 #   - bundled seed skills (copied, so agent edits survive; HERMES_FORCE_RESEED=1
 #     overwrites them from /app)
 #   - symlinks to the read-only, git-tracked architecture (AGENTS.md, SOUL.md,
-#     hermes.toml, mcp.json)
+#     mcp.json). config.yaml is COPIED (no-clobber), not symlinked, because the
+#     hermes runtime rewrites it in place (version migrations, onboarding flags).
 #
 # It deliberately does NOT touch the global ~/.hermes alias, gateway.pid, or
 # auth.json — those are main-home concerns owned by bootstrap.sh (the fleet
@@ -45,7 +47,7 @@ if [[ ! -d "$CONFIG_DIR" ]]; then
   log "FATAL: $CONFIG_DIR not found — Dockerfile didn't copy hermes-config in."
   exit 1
 fi
-for f in AGENTS.md SOUL.md hermes.toml mcp.json roles/ceo.md; do
+for f in AGENTS.md SOUL.md mcp.json roles/ceo.md; do
   if [[ ! -f "$CONFIG_DIR/$f" ]]; then
     log "FATAL: $CONFIG_DIR/$f missing — config is incomplete."
     exit 1
@@ -77,12 +79,25 @@ mkdir -p "$HOME_DIR" \
 # Seed runtime state files hermes/admin read/write. The admin server expects
 # both to exist and barfs on missing files.
 #   .env          — operator-set secrets and runtime toggles.
-#   config.yaml   — hermes runtime config (mcp_servers etc.), seeded from the
-#                   bundled example if absent.
+#   config.yaml   — hermes runtime config (model matrix, toolsets, etc.). Prefer
+#                   our git-tracked template (carries the per-responsibility
+#                   model matrix); fall back to the runtime's bundled example so
+#                   the agent still boots if the template is ever absent.
+#                   No-clobber by default so runtime/dashboard edits survive
+#                   redeploys; HERMES_FORCE_RESEED=1 overwrites from the git
+#                   template (merge any wanted runtime drift back into git FIRST).
 touch "$HOME_DIR/.env"
-if [[ ! -f "$HOME_DIR/config.yaml" ]] && [[ -f /opt/hermes-agent/cli-config.yaml.example ]]; then
-  cp /opt/hermes-agent/cli-config.yaml.example "$HOME_DIR/config.yaml"
-  log "seeded $HOME_DIR/config.yaml from cli-config.yaml.example"
+if [[ ! -f "$HOME_DIR/config.yaml" ]]; then
+  if [[ -f "$CONFIG_DIR/config.yaml" ]]; then
+    cp "$CONFIG_DIR/config.yaml" "$HOME_DIR/config.yaml"
+    log "seeded $HOME_DIR/config.yaml from git-tracked template"
+  elif [[ -f /opt/hermes-agent/cli-config.yaml.example ]]; then
+    cp /opt/hermes-agent/cli-config.yaml.example "$HOME_DIR/config.yaml"
+    log "seeded $HOME_DIR/config.yaml from bundled example"
+  fi
+elif [[ "${HERMES_FORCE_RESEED:-0}" == "1" ]] && [[ -f "$CONFIG_DIR/config.yaml" ]]; then
+  cp "$CONFIG_DIR/config.yaml" "$HOME_DIR/config.yaml"
+  log "re-seeded $HOME_DIR/config.yaml from git-tracked template (HERMES_FORCE_RESEED=1)"
 fi
 
 # ----------------------------------------------------------------------------
@@ -224,7 +239,6 @@ done
 # linked to the (always-current) git-tracked sources.
 ln -sfn "$CONFIG_DIR/AGENTS.md"   "$HOME_DIR/AGENTS.md"
 ln -sfn "$CONFIG_DIR/SOUL.md"     "$HOME_DIR/SOUL.md"
-ln -sfn "$CONFIG_DIR/hermes.toml" "$HOME_DIR/hermes.toml"
 ln -sfn "$CONFIG_DIR/mcp.json"    "$HOME_DIR/mcp.json"
 # Role overlays (role-agnostic foundation + per-role gates/duties; the agent reads
 # roles/<its-role>.md at runtime — see AGENTS.md §1.1). Whole dir symlinked.

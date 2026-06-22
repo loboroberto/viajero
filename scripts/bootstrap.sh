@@ -10,7 +10,8 @@
 #   /app/hermes-config/        ← git-tracked, READ-ONLY in container
 #       AGENTS.md
 #       SOUL.md
-#       hermes.toml
+#       config.yaml            ← hermes runtime config (model matrix); COPIED to
+#                                the volume (no-clobber), not symlinked
 #       mcp.json
 #       skills/<seed-skill>/SKILL.md ...
 #
@@ -36,7 +37,6 @@
 #       architecture:
 #           /data/hermes/AGENTS.md   → /app/hermes-config/AGENTS.md
 #           /data/hermes/SOUL.md     → /app/hermes-config/SOUL.md
-#           /data/hermes/hermes.toml → /app/hermes-config/hermes.toml
 #           /data/hermes/mcp.json    → /app/hermes-config/mcp.json
 #
 #   ~/.hermes/   → /data/hermes   (single alias). Any code path or skill doc
@@ -61,7 +61,7 @@ HERMES_DIR="${HERMES_HOME:-$VOLUME_DIR}"
 log() { printf '[bootstrap] %s\n' "$*" >&2; }
 
 # ----------------------------------------------------------------------------
-# 1. Config dir completeness (AGENTS.md/SOUL.md/hermes.toml/mcp.json, git-tracked;
+# 1. Config dir completeness (AGENTS.md/SOUL.md/mcp.json, git-tracked;
 #    missing = misbuild) is validated by seed-hermes-home.sh below — same FATAL
 #    checks — so we don't duplicate them here.
 # ----------------------------------------------------------------------------
