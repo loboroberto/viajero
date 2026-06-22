@@ -47,7 +47,7 @@ if [[ ! -d "$CONFIG_DIR" ]]; then
   log "FATAL: $CONFIG_DIR not found — Dockerfile didn't copy hermes-config in."
   exit 1
 fi
-for f in AGENTS.md SOUL.md mcp.json roles/ceo.md; do
+for f in AGENTS.md SOUL.md mcp.json; do
   if [[ ! -f "$CONFIG_DIR/$f" ]]; then
     log "FATAL: $CONFIG_DIR/$f missing — config is incomplete."
     exit 1
@@ -144,13 +144,15 @@ EOF
   log "seeded $HOME_DIR/USER.md"
 fi
 
-# Onboarding gate state (fleet #20). Per-agent flag the human-onboarding-handshake
-# skill reads/writes; lives in THIS home (never USER.md, which is a shared
-# main-home context file) so each fleet agent gates independently. No-clobber: an
-# already-onboarded agent keeps humanOnboarded:true across reseeds. agentId is the
-# fleet home's basename for /data/hermes/agents/<id>; empty for the main home (the
-# skill fills it in on first run). Honor HERMES_ONBOARDING_STATE_PATH if set
-# (downstream may relocate the gate file); default keeps today's per-agent layout.
+# Onboarding gate state. The onboarding gate (AGENTS.md §1.1; the `onboarding`
+# skill, added in a later issue) reads/writes this flag; it lives in THIS home
+# (never USER.md, a shared context file) so it gates per-home. No-clobber: an
+# already-onboarded home keeps its flag across reseeds. agentId is the home's
+# basename for /data/hermes/agents/<id>; empty for the main home. Honor
+# HERMES_ONBOARDING_STATE_PATH if set (downstream may relocate the gate file);
+# default keeps the per-home layout. NOTE: the JSON shape below (humanOnboarded)
+# is the legacy fleet shape; #10/#3 reconcile it to the onboarding skill's
+# `onboarded` flag when that skill lands.
 state_file="${HERMES_ONBOARDING_STATE_PATH:-$HOME_DIR/onboarding/state.json}"
 if [[ ! -f "$state_file" ]]; then
   case "$HOME_DIR" in
@@ -212,9 +214,7 @@ fi
 # honor "volume wins" on conflict (agent edits stick). Set HERMES_FORCE_RESEED=1
 # to overwrite the home's copies from /app.
 SEED_SKILLS=(coala-decision-cycle coala-skill-induction coala-reflection
-             deploy-railway debug-incident write-quality-code
-             group-agent-coordination github-projects-ops channel-aware-messaging
-             human-onboarding-handshake)
+             coala-divergence-audit group-agent-coordination channel-aware-messaging)
 
 for skill in "${SEED_SKILLS[@]}"; do
   src="$CONFIG_DIR/skills/$skill"
@@ -240,6 +240,3 @@ done
 ln -sfn "$CONFIG_DIR/AGENTS.md"   "$HOME_DIR/AGENTS.md"
 ln -sfn "$CONFIG_DIR/SOUL.md"     "$HOME_DIR/SOUL.md"
 ln -sfn "$CONFIG_DIR/mcp.json"    "$HOME_DIR/mcp.json"
-# Role overlays (role-agnostic foundation + per-role gates/duties; the agent reads
-# roles/<its-role>.md at runtime — see AGENTS.md §1.1). Whole dir symlinked.
-ln -sfn "$CONFIG_DIR/roles"       "$HOME_DIR/roles"

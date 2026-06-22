@@ -2,13 +2,13 @@
 name: channel-aware-messaging
 description: >
   Use whenever you're about to compose an outbound message and have a
-  choice of channel — DM the user, post in a PR thread, broadcast in a
-  multi-agent coordination space, etc. Picks the right channel from the
-  `hermes.toml [[channels.channel]]` registry, respects each channel's
-  etiquette tag, and guards against visibility escalation (private →
-  public without a reason). Trigger phrases: where should I post, which
-  channel, broadcast this, ping the team, reply to, dm them, public or
-  private, share this with.
+  choice of channel — the operator DM vs. the logistics group (AGENTS.md
+  §7). Picks the right channel from the live channels (config.yaml gateway +
+  the principal's memory keys), respects each channel's etiquette, guards
+  against visibility escalation (private → public without a reason), and
+  treats `[SILENT]` as a valid no-send outcome. Trigger phrases: where
+  should I post, which channel, dm the operator, tell the group, reply to,
+  public or private, share this with.
 version: 1.0.0
 tags: [meta, channels, group, etiquette]
 ---
@@ -36,18 +36,23 @@ in place.
 
 ## The Decision
 
-Three questions, in order. Answer each from the channel registry
-(`hermes.toml [[channels.channel]]`), not from intuition.
+Three questions, in order. Answer each from the live channels (config.yaml
+gateway + the principal's memory keys, per AGENTS.md §7), not from intuition.
 
 ### 1. Who needs to see this?
 
-- **Just the user** → `kind=human` channel, usually `visibility=private`.
-- **A specific peer** → `kind=peer-agent` channel for that peer if one
-  exists, otherwise `@`-mention them in the most relevant `kind=group`
-  channel.
-- **A coordinating group (humans + peers)** → `kind=group`.
-- **Everyone subscribed to this topic, for awareness only** →
-  `kind=broadcast`. Use sparingly.
+For Viajero there are two live channels (AGENTS.md §7):
+
+- **The operator** (an infra failure, a decision gate, an anomaly that needs
+  human judgment) → **operator DM** (`kind=human, visibility=private`,
+  `dm_chat_id`). Never routine itineraries or flight times here.
+- **The travel party** (a flight arrival, a logistics update) → **logistics
+  group** (`kind=group, visibility=public`, `travel_notify_chat_id`). Raw
+  full-text URLs only — never markdown links (they crash mobile).
+- **Nothing actionable** → emit `[SILENT]`; send to no channel.
+
+(`kind=peer-agent` / `kind=broadcast` channels are dormant — no peers by
+default; see AGENTS.md §6.)
 
 ### 2. Does this need a reply, or is it FYI?
 

@@ -2,13 +2,13 @@
 name: group-agent-coordination
 description: >
   Use whenever you operate in a channel where other independent agents are
-  present — GitHub PR threads, project boards, paperclip_ai / multica
-  coordination spaces, or any [[channels.channel]] with kind ∈
-  {peer-agent, group, broadcast}. Enumerates the five coordination
-  primitives (discovery, claim, release, hand-off, defer, escalate) and
-  how each realizes per channel kind. Trigger phrases: peer agent, group
-  channel, claim, hand off, who's working on, are we stepping on, multi
-  agent, coordinate with.
+  present. DORMANT by default for Viajero — a single-principal travel-ops
+  agent has no peers (AGENTS.md §6); this skill activates only once a peer is
+  registered in `PEERS.md`. Enumerates the six coordination primitives
+  (discovery, claim, release, hand-off, defer, escalate) and how each
+  realizes per channel kind. Trigger phrases: peer agent, group channel,
+  claim, hand off, who's working on, are we stepping on, multi agent,
+  coordinate with.
 version: 1.0.0
 tags: [coala, meta, group, multi-agent, coordination]
 ---
@@ -20,10 +20,16 @@ agents. Your local decision cycle still owns your behavior; this skill
 constrains how Propose, Select, and Execute change when the group's
 shared state is on the table.
 
+> **Dormant by default.** Viajero serves one principal and has no peer agents
+> out of the box, so this skill is a no-op until a peer is registered in
+> `PEERS.md` (AGENTS.md §6). The operator-DM ↔ logistics-group channel model
+> is *not* multi-agent coordination — that lives in AGENTS.md §7 and the
+> `channel-aware-messaging` skill. Everything below applies if/when a peer joins.
+
 ## When to Use
 
-Any cycle where the relevant channel has `kind` ∈ `{peer-agent, group,
-broadcast}` in `hermes-config/hermes.toml [[channels.channel]]`. Also:
+Any cycle where the relevant channel has another independent agent present
+(`kind` ∈ `{peer-agent, group, broadcast}`). Also:
 
 - You're about to fire a grounding action on a shared surface (a PR
   comment, an issue close, a project-board move).
@@ -35,9 +41,9 @@ broadcast}` in `hermes-config/hermes.toml [[channels.channel]]`. Also:
 ## Pre-Flight (do once per channel-entry)
 
 1. **Retrieve** (CoALA §4.3):
-   - `PEERS.md` — who are the registered peers?
-   - `hermes.toml [[channels.channel]]` for the active channel — `kind`,
-     `visibility`, `etiquette`.
+   - `PEERS.md` — who are the registered peers? (none by default)
+   - the active channel's `kind` / `visibility` / `etiquette` — from
+     `config.yaml` + the principal's memory keys (AGENTS.md §7).
    - Recent channel history (last N messages / commits / events) via the
      channel's transport — what's already been claimed or done?
 2. **Observe** (CoALA §4.1): name the peers currently active in this
