@@ -1,0 +1,33 @@
+# keep-skills.txt — allowlist of Hermes runtime built-in skills to RETAIN in the
+# image. Everything else under /opt/hermes-agent/{skills,optional-skills} is
+# pruned from the SYNC SOURCE at build time (see docker/Dockerfile), so the
+# runtime's skills_sync can only ever seed this curated set onto the volume.
+# bootstrap.sh additionally removes already-synced de-listed built-ins from an
+# existing volume (catalog ∩ keep-list discriminator).
+#
+# Format: one `category/skill` path (relative to the skills root) per line.
+# Lines starting with `#` and blank lines are ignored. Paths must match the
+# directory that contains a SKILL.md, exactly (matched with grep -xF). Paths
+# were verified against NousResearch/hermes-agent @ HERMES_REF=v2026.5.16 (a
+# 168-skill catalog across skills/ + optional-skills/).
+#
+# Rationale: Viajero is an autonomous travel-ops agent. We keep the Google
+# productivity engine (the required Gmail/Calendar backend), document/receipt
+# ingestion, the no-GCP email path for onboarding, a web-search fallback, and a
+# little MCP/skill-authoring infra — and strip the gaming/creative/mlops/finance/
+# social/etc. bulk that otherwise balloons the volume to 168 synced skills.
+# Viajero's OWN travel skills are NOT here — they live in hermes-config/skills
+# and load read-only via skills.external_dirs (never seeded onto the volume).
+# (The travel-specific calendar workflow ships as the ported managing-calendar-
+# travel skill there; the runtime has no built-in travel-calendar skill to keep.)
+
+# --- bundled (/opt/hermes-agent/skills) ---
+productivity/google-workspace
+email/himalaya
+productivity/ocr-and-documents
+productivity/nano-pdf
+mcp/native-mcp
+software-development/hermes-agent-skill-authoring
+
+# --- optional (/opt/hermes-agent/optional-skills) ---
+research/duckduckgo-search
