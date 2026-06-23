@@ -81,6 +81,53 @@ log() { printf '[bootstrap] %s\n' "$*" >&2; }
 mkdir -p /data/hermes/agents
 
 # ----------------------------------------------------------------------------
+# 2a. Migration — durable skills moved to read-only external_dirs.
+# ----------------------------------------------------------------------------
+# Viajero's skills load read-only from /app/hermes-config/skills via config.yaml
+# `skills.external_dirs` and are no longer seeded onto the volume. Two one-time,
+# idempotent migrations for volumes seeded under the old copy scheme:
+#   (a) ensure the (no-clobber-seeded) volume config.yaml exposes the external
+#       dir — fresh volumes already have it from the template; older ones carry
+#       `external_dirs: []`.
+#   (b) remove orphaned volume copies of OUR shipped skills (exact leaf paths),
+#       so the immutable image version is authoritative again. Runtime-curated
+#       built-ins and agent-authored skills live at other paths, untouched.
+if [[ -f "$HERMES_DIR/config.yaml" ]]; then
+  python3 - "$HERMES_DIR/config.yaml" <<'PY' || log "WARN: external_dirs config patch skipped"
+import sys
+p = sys.argv[1]
+want = "/app/hermes-config/skills"
+lines = open(p, encoding="utf-8").read().splitlines()
+out, in_skills, patched = [], False, False
+for ln in lines:
+    if ln.rstrip() == "skills:":
+        in_skills = True
+    elif in_skills and ln and not ln[0].isspace():
+        in_skills = False
+    if in_skills and ln.strip() == "external_dirs: []":
+        out.append("  external_dirs:")
+        out.append("  - " + want)
+        patched = True
+        continue
+    out.append(ln)
+if patched:
+    open(p, "w", encoding="utf-8").write("\n".join(out) + "\n")
+    print("migration: patched skills.external_dirs in volume config.yaml")
+elif want not in "\n".join(lines):
+    print("migration: NOTE external_dirs not in default form; verify manually", file=sys.stderr)
+PY
+fi
+if [[ -d "$HERMES_DIR/skills" && -d "$CONFIG_DIR/skills" ]]; then
+  while IFS= read -r skill_md; do
+    rel_dir=$(dirname "${skill_md#"$CONFIG_DIR"/skills/}")
+    if [[ -n "$rel_dir" && "$rel_dir" != "." && -e "$HERMES_DIR/skills/$rel_dir" ]]; then
+      rm -rf "$HERMES_DIR/skills/$rel_dir"
+      log "migration: removed orphaned volume skill copy skills/$rel_dir (now external/read-only)"
+    fi
+  done < <(find "$CONFIG_DIR/skills" -name SKILL.md)
+fi
+
+# ----------------------------------------------------------------------------
 # 2b. Migration — prune de-listed runtime built-ins from the volume.
 # ----------------------------------------------------------------------------
 # The agent's /skills list reads the VOLUME ($HERMES_HOME/skills) + external_dirs.
@@ -155,18 +202,92 @@ fi
 # so removing unconditionally is safe.
 rm -f "$HERMES_DIR/gateway.pid"
 
-# Bootstrap OAuth tokens from env var. Needed for providers that auth
-# via OAuth device flow rather than a static API key (xAI Grok SuperGrok,
-# Gemini CLI, Qwen OAuth, Claude Code). Set HERMES_AUTH_JSON_BOOTSTRAP to
-# the contents of a locally-generated ~/.hermes/auth.json. Written only
-# once — subsequent token refreshes update the file in place on the
-# persistent volume. Main-home only (per-agent fleet runs bring their own
-# creds via the runner's per-agent env).
+# Bootstrap OAuth tokens / secrets from env vars. auth.json covers providers that
+# auth via OAuth device flow (xAI Grok SuperGrok, Gemini CLI, Qwen OAuth, Claude
+# Code); the two Google files back the google-workspace skill's google_api.py
+# (Gmail/Calendar) and are read from the home root. All are written ONCE if absent
+# — subsequent refreshes update the file in place on the volume. Per-user secrets
+# live under secrets/ (chmod 700). Never committed to git. Main-home only
+# (per-agent fleet runs bring their own creds via the runner's per-agent env).
+mkdir -p "$HERMES_DIR/secrets"
+chmod 700 "$HERMES_DIR/secrets" 2>/dev/null || true
+
 if [[ ! -f "$HERMES_DIR/auth.json" ]] && [[ -n "${HERMES_AUTH_JSON_BOOTSTRAP:-}" ]]; then
   printf '%s' "$HERMES_AUTH_JSON_BOOTSTRAP" > "$HERMES_DIR/auth.json"
   chmod 600 "$HERMES_DIR/auth.json"
   log "bootstrapped $HERMES_DIR/auth.json from HERMES_AUTH_JSON_BOOTSTRAP"
 fi
+
+if [[ ! -f "$HERMES_DIR/google_token.json" ]] && [[ -n "${HERMES_GOOGLE_TOKEN_BOOTSTRAP:-}" ]]; then
+  printf '%s' "$HERMES_GOOGLE_TOKEN_BOOTSTRAP" > "$HERMES_DIR/google_token.json"
+  chmod 600 "$HERMES_DIR/google_token.json"
+  log "bootstrapped $HERMES_DIR/google_token.json from HERMES_GOOGLE_TOKEN_BOOTSTRAP"
+fi
+
+if [[ ! -f "$HERMES_DIR/google_client_secret.json" ]] && [[ -n "${HERMES_GOOGLE_CLIENT_SECRET_BOOTSTRAP:-}" ]]; then
+  printf '%s' "$HERMES_GOOGLE_CLIENT_SECRET_BOOTSTRAP" > "$HERMES_DIR/google_client_secret.json"
+  chmod 600 "$HERMES_DIR/google_client_secret.json"
+  log "bootstrapped $HERMES_DIR/google_client_secret.json from HERMES_GOOGLE_CLIENT_SECRET_BOOTSTRAP"
+fi
+
+# ----------------------------------------------------------------------------
+# 2d. Seed .env so the admin gate passes without the manual web /setup step.
+# ----------------------------------------------------------------------------
+# The HTTP front door (/opt/hermes-admin/server.py) gates the gateway on
+# is_config_complete(), which reads ONLY $HERMES_HOME/.env and requires LLM_MODEL
+# plus one recognized provider key — it does NOT read process env. Mirror
+# recognized env vars into .env, NO-CLOBBER (only add keys not already present, so
+# web-form edits and later changes win). Keys not written here are still inherited
+# by the gateway via os.environ; this block exists purely to satisfy the admin
+# gate + surface the values in the dashboard.
+ENV_FILE="$HERMES_DIR/.env"
+touch "$ENV_FILE"
+
+# Append KEY=VALUE only if KEY is set in the environment and absent from .env.
+seed_env_kv() {
+  local key="$1" val
+  val="${!key:-}"
+  [[ -n "$val" ]] || return 0
+  if ! grep -qE "^${key}=" "$ENV_FILE"; then
+    printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE"
+    log "seeded .env $key from environment"
+  fi
+}
+
+# Provider API keys the admin gate recognizes (PROVIDER_KEYS in server.py).
+# NOTE: OPENAI_API_KEY / NOUS_API_KEY are usable by the gateway but are NOT in
+# this set, so they do not by themselves satisfy the gate.
+PROVIDER_KEYS="OPENROUTER_API_KEY DEEPSEEK_API_KEY DASHSCOPE_API_KEY GLM_API_KEY \
+KIMI_API_KEY MINIMAX_API_KEY HF_TOKEN NVIDIA_API_KEY ARCEE_API_KEY STEPFUN_API_KEY \
+AI_GATEWAY_API_KEY GEMINI_API_KEY NOVITA_API_KEY FIREWORKS_API_KEY CUSTOM_PROVIDER_API_KEY"
+
+have_provider=0
+for k in $PROVIDER_KEYS; do
+  if [[ -n "${!k:-}" ]]; then have_provider=1; break; fi
+done
+
+# LLM_MODEL is required by the gate. Honor an explicit override; otherwise default
+# to Viajero's brain (config.yaml model.default) — but only when a provider key
+# exists, so an intentionally-unconfigured deploy still falls through to /setup.
+if ! grep -qE '^LLM_MODEL=' "$ENV_FILE"; then
+  if [[ -n "${LLM_MODEL:-}" ]]; then
+    printf 'LLM_MODEL=%s\n' "$LLM_MODEL" >> "$ENV_FILE"
+    log "seeded .env LLM_MODEL from environment"
+  elif (( have_provider )); then
+    printf 'LLM_MODEL=%s\n' 'anthropic/claude-haiku-4.5' >> "$ENV_FILE"
+    log "seeded .env LLM_MODEL default (anthropic/claude-haiku-4.5)"
+  fi
+fi
+
+# Provider keys + custom-provider knobs + recognized channel vars. Telegram is
+# Viajero's delivery transport (operator DM + logistics group, per AGENTS.md §7).
+for k in $PROVIDER_KEYS CUSTOM_PROVIDER_BASE_URL CUSTOM_PROVIDER_NAME \
+         TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS \
+         TELEGRAM_HOME_CHANNEL TELEGRAM_HOME_CHANNEL_THREAD_ID \
+         DISCORD_BOT_TOKEN DISCORD_ALLOWED_USERS \
+         SLACK_BOT_TOKEN SLACK_APP_TOKEN GATEWAY_ALLOW_ALL_USERS; do
+  seed_env_kv "$k"
+done
 
 # ----------------------------------------------------------------------------
 # 3. Alias ~/.hermes → the main home (main agent only)

@@ -100,6 +100,21 @@ elif [[ "${HERMES_FORCE_RESEED:-0}" == "1" ]] && [[ -f "$CONFIG_DIR/config.yaml"
   log "re-seeded $HOME_DIR/config.yaml from git-tracked template (HERMES_FORCE_RESEED=1)"
 fi
 
+# integrations.yaml — non-secret integration knobs (reconciliation cadence, alert
+# lead, calendar colors, label names). No-clobber; seeded once if the git
+# template is present (lands with #9). Guard makes this a no-op until then.
+if [[ ! -f "$HOME_DIR/integrations.yaml" ]] && [[ -f "$CONFIG_DIR/integrations.yaml" ]]; then
+  cp "$CONFIG_DIR/integrations.yaml" "$HOME_DIR/integrations.yaml"
+  log "seeded $HOME_DIR/integrations.yaml"
+fi
+
+# cron/jobs.json — reconciliation / flight-alert / divergence-audit job templates.
+# No-clobber; seeded once if the git template is present (lands with #9).
+if [[ ! -f "$HOME_DIR/cron/jobs.json" ]] && [[ -f "$CONFIG_DIR/cron/jobs.json" ]]; then
+  cp "$CONFIG_DIR/cron/jobs.json" "$HOME_DIR/cron/jobs.json"
+  log "seeded $HOME_DIR/cron/jobs.json"
+fi
+
 # ----------------------------------------------------------------------------
 # 2. Seed MEMORY.md / USER.md / PEERS.md if absent (agent appends over time).
 # ----------------------------------------------------------------------------
@@ -208,35 +223,66 @@ EOF
 fi
 
 # ----------------------------------------------------------------------------
-# 3. Seed bundled skills into the home (copy, so agent edits survive rebuilds).
+# 3. Skills load READ-ONLY from the image (NOT seeded onto the volume).
 # ----------------------------------------------------------------------------
-# The git-tracked originals in /app/hermes-config/skills/ remain canonical; we
-# honor "volume wins" on conflict (agent edits stick). Set HERMES_FORCE_RESEED=1
-# to overwrite the home's copies from /app.
-SEED_SKILLS=(coala-decision-cycle coala-skill-induction coala-reflection
-             coala-divergence-audit group-agent-coordination channel-aware-messaging)
-
-for skill in "${SEED_SKILLS[@]}"; do
-  src="$CONFIG_DIR/skills/$skill"
-  dst="$HOME_DIR/skills/$skill"
-
-  if [[ ! -d "$src" ]]; then
-    log "WARN: seed skill missing in config: $skill"
-    continue
-  fi
-
-  if [[ ! -d "$dst" ]] || [[ "${HERMES_FORCE_RESEED:-0}" == "1" ]]; then
-    rm -rf "$dst"
-    cp -r "$src" "$dst"
-    log "seeded skill: $skill"
-  fi
-done
+# The git-tracked skills in /app/hermes-config/skills/ are exposed to the agent
+# via config.yaml `skills.external_dirs: [/app/hermes-config/skills]`, NOT copied
+# onto the writable volume. This makes them immutable-but-augmentable: refreshed
+# from the image every deploy, the agent can author NEW skills (they land in
+# $HOME_DIR/skills, the runtime's local skills dir) but cannot durably edit the
+# shipped ones. The volume's skills/ therefore holds only runtime-curated
+# built-ins (skills_sync) + agent-authored augmentation. bootstrap.sh handles the
+# one-time migration for volumes previously seeded with copies of our skills.
+log "skills/ load read-only from external_dirs (not seeded onto the volume)"
 
 # ----------------------------------------------------------------------------
-# 4. Symlink the read-only, git-tracked architecture into the home.
+# 4. Symlink the read-only, git-tracked architecture + tools into the home.
 # ----------------------------------------------------------------------------
-# All mutable state is written directly into the home; only the architecture is
-# linked to the (always-current) git-tracked sources.
+# All mutable state is written directly into the home; only the architecture and
+# tool implementations are linked to the (always-current) git-tracked sources.
 ln -sfn "$CONFIG_DIR/AGENTS.md"   "$HOME_DIR/AGENTS.md"
 ln -sfn "$CONFIG_DIR/SOUL.md"     "$HOME_DIR/SOUL.md"
 ln -sfn "$CONFIG_DIR/mcp.json"    "$HOME_DIR/mcp.json"
+ln -sfn "$CONFIG_DIR/tools"       "$HOME_DIR/tools"
+
+# ----------------------------------------------------------------------------
+# 5. Record the seed baseline manifest (sha256 per seeded file + commit).
+# ----------------------------------------------------------------------------
+# Snapshot of the GIT-tracked seed (CONFIG_DIR), keyed by the HOME-relative path
+# each file maps to — memory/ templates map to the ROOT MEMORY.md/USER.md/PEERS.md
+# (viajero keeps memory at the home root, not a memories/ subdir). tools/
+# divergence_scan.py uses /app/hermes-config directly as its baseline; this
+# manifest is the fallback for when that dir is absent (diffing a pulled-down
+# volume locally) + an explicit record of the commit the volume was last seeded
+# from. Always rewritten — the seed is the source of truth.
+python3 - "$CONFIG_DIR" "$HOME_DIR" "${RAILWAY_GIT_COMMIT_SHA:-unknown}" <<'PY' || log "WARN: could not write .seed-manifest.json"
+import hashlib, json, os, sys
+config_dir, home_dir, commit = sys.argv[1], sys.argv[2], sys.argv[3]
+files = {}
+def sha(p):
+    with open(p, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+# Recursive trees, keyed by home-relative prefix.
+for sub, prefix in (("skills", "skills"), ("references", "references")):
+    root = os.path.join(config_dir, sub)
+    if not os.path.isdir(root):
+        continue
+    for dp, _d, fs in os.walk(root):
+        for n in fs:
+            full = os.path.join(dp, n)
+            files[f"{prefix}/{os.path.relpath(full, root)}"] = sha(full)
+# Memory templates: git memory/<X> -> ROOT <X> on the volume.
+for name in ("MEMORY.md", "USER.md", "PEERS.md"):
+    full = os.path.join(config_dir, "memory", name)
+    if os.path.isfile(full):
+        files[name] = sha(full)
+# Single files at the root.
+for name in ("config.yaml", "integrations.yaml", "cron/jobs.json"):
+    full = os.path.join(config_dir, name)
+    if os.path.isfile(full):
+        files[name] = sha(full)
+out = {"commit": commit, "files": files}
+with open(os.path.join(home_dir, ".seed-manifest.json"), "w", encoding="utf-8") as fh:
+    json.dump(out, fh, indent=2)
+PY
+log "wrote $HOME_DIR/.seed-manifest.json"

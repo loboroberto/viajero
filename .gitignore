@@ -1,9 +1,14 @@
-# Secrets
+# Secrets — runtime/migration only, NEVER committed (live on the Railway volume).
 .env
 .env.local
 .env.*.local
 *.pem
 *.key
+auth.json
+google_token.json
+google_client_secret.json
+*token*.json
+secrets/
 
 # Runtime state (lives on Railway volume, never in git)
 data/
