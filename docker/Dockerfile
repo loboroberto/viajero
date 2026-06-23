@@ -91,11 +91,6 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Layer 3: Railway CLI. Used at runtime by the deploy-railway skill and
-# by the agent for Railway MCP / CLI grounding (RAILWAY_TOKEN). Tiny
-# install — its own layer purely for diagnostic clarity if it ever breaks.
-RUN curl -fsSL https://railway.app/install.sh | sh -s -- --yes --bin-dir /usr/local/bin
-
 # Install hermes-agent (provides the `hermes` CLI) at pinned ref. The [all]
 # extras in current hermes pull cron, cli, dev, pty, mcp, homeassistant,
 # sms, acp, google, web, youtube. Heavy backends (messaging gateways, TTS,
@@ -116,6 +111,22 @@ RUN git clone --depth 1 --branch ${HERMES_REF} \
     npm install --silent --no-fund --no-audit --progress=false && \
     npm run build && \
     rm -rf /opt/hermes-agent/.git /root/.npm
+
+# Python deps for Viajero's travel-ops tooling + Google APIs — the built-in
+# google-workspace skill's google_api.py is the proven Gmail/Calendar backend
+# (the Python fallback; `gws` CLI is a future drop-in). Installed into the same
+# system python hermes runs in (--system), matching hermes's own install above.
+#   google-api-python-client — Gmail/Calendar API
+#   google-auth-oauthlib     — OAuth flow + token refresh
+#   google-auth-httplib2     — HTTP transport for the Google APIs
+#   google-auth              — base auth library
+#   pyyaml                   — config.yaml / integrations.yaml parsing by our tools
+RUN uv pip install --system --no-cache \
+    'google-api-python-client>=2.100' \
+    'google-auth-oauthlib>=1.2.0' \
+    'google-auth-httplib2>=0.2.0' \
+    'google-auth>=2.25' \
+    'pyyaml>=6'
 
 # Curate the runtime's built-in skill catalog.
 #
