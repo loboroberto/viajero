@@ -17,6 +17,8 @@
 #   - .env (touched) + config.yaml (prefer git-tracked template, fall back to
 #     the runtime's bundled example)
 #   - MEMORY.md / USER.md / PEERS.md (if absent)
+#   - references/ travel knowledge base (copied no-clobber; HERMES_FORCE_RESEED=1
+#     refreshes it from /app)
 #   - bundled seed skills (copied, so agent edits survive; HERMES_FORCE_RESEED=1
 #     overwrites them from /app)
 #   - symlinks to the read-only, git-tracked architecture (AGENTS.md, SOUL.md,
@@ -64,6 +66,7 @@ mkdir -p "$HOME_DIR" \
          "$HOME_DIR/skills" \
          "$HOME_DIR/trajectories" \
          "$HOME_DIR/memory" \
+         "$HOME_DIR/references/employers" \
          "$HOME_DIR/cron" \
          "$HOME_DIR/sessions" \
          "$HOME_DIR/logs" \
@@ -113,6 +116,23 @@ fi
 if [[ ! -f "$HOME_DIR/cron/jobs.json" ]] && [[ -f "$CONFIG_DIR/cron/jobs.json" ]]; then
   cp "$CONFIG_DIR/cron/jobs.json" "$HOME_DIR/cron/jobs.json"
   log "seeded $HOME_DIR/cron/jobs.json"
+fi
+
+# references/ — user-agnostic travel domain knowledge (StandardBooking schema,
+# provider patterns, calendar conventions, gmail-ops contract, employer definitions).
+# Copied onto the volume so the agent reads them home-relative (references/<doc>.md)
+# AND can author/augment them (e.g. onboarding writes references/employers/<principal>.md;
+# a read-only symlink would block that write). No-clobber so agent additions survive
+# redeploys; HERMES_FORCE_RESEED=1 refreshes from git (merge wanted runtime drift back
+# into git FIRST — a forced reseed is a full overwrite; see tools/divergence_scan.py).
+if [[ -d "$CONFIG_DIR/references" ]]; then
+  if [[ "${HERMES_FORCE_RESEED:-0}" == "1" ]]; then
+    cp -r "$CONFIG_DIR/references/." "$HOME_DIR/references/"
+    log "re-seeded references/ (HERMES_FORCE_RESEED=1)"
+  else
+    cp -rn "$CONFIG_DIR/references/." "$HOME_DIR/references/" 2>/dev/null || true
+    log "seeded references/ (no-clobber)"
+  fi
 fi
 
 # ----------------------------------------------------------------------------
