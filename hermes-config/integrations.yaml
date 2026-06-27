@@ -1,0 +1,68 @@
+# integrations.yaml — non-secret integration configuration (UI-addressable).
+#
+# This is the single structured surface for integration KNOBS — provider choices,
+# cadences, thresholds, and feature flags. It is seeded onto the volume on boot
+# and may be edited at runtime (or by a future scoped admin UI).
+#
+# SECRETS DO NOT LIVE HERE. Tokens and API keys come from env / the secrets/ dir:
+#   OPENROUTER_API_KEY, TELEGRAM_BOT_TOKEN, GMAIL_APP_PASSWORD, and the Google
+#   OAuth files (google_token.json / google_client_secret.json).
+#
+# PER-PRINCIPAL VALUES DO NOT LIVE HERE EITHER. The traveler's home airport,
+# chat ids, email account, calendar id, and expense inbox live in MEMORY.md on
+# the volume (written by the onboarding skill). This file holds only durable,
+# user-agnostic defaults. Provider sender/subject patterns live in
+# references/provider-patterns.md.
+
+email_reconciliation:
+  enabled: true
+  # Intended sweep cadence. The authoritative schedule is the cron expr in
+  # cron/jobs.json (travel-reconciliation-hygiene); this records the cadence the
+  # default expr encodes.
+  cadence_minutes: 60
+  # Default Gmail label names. A principal may override via MEMORY.md
+  # (travel_bookings_label / travel_assignments_label).
+  bookings_label: "Provider Bookings"
+  assignments_label: null          # optional; set per-principal in MEMORY.md
+  # Email backend: himalaya (Gmail App Password, no GCP) | google_api (GCP OAuth).
+  # The principal's actual choice is the travel_email_backend memory key; this is
+  # only the default a fresh deploy assumes.
+  default_backend: google_api
+
+calendar:
+  # Calendar reconciled to unless MEMORY.md travel_calendar_id overrides.
+  default_calendar_id: primary
+  dedup_by_message_id: true        # RFC822 Message-ID first; see references/calendar-conventions.md
+  raw_url_only: true               # never markdown links (mobile calendar clients render them poorly)
+  # colorId per booking type. Authoritative copy in references/calendar-conventions.md.
+  event_colors:
+    flight: 9
+    hotel: 2
+    car: 6
+    assignment: 10
+
+flight_alerts:
+  # Home-airport arrival alerts. Disabled until the principal sets home_airport +
+  # travel_notify_chat_id in MEMORY.md (cron/jobs.json flight-arrival-alerts also
+  # ships enabled:false). Alerts go ONLY to the logistics group
+  # (travel_notify_chat_id), never the operator DM. See AGENTS.md §7.
+  enabled: false
+  lead_hours: 48                   # T-minus alert lead; MEMORY.md alert_lead_hours overrides
+  home_airport: null               # IATA; null = no alerts. Per-principal → MEMORY.md
+
+expense:
+  # Forward business rental-car / receipt emails to expense_receipt_inbox (MEMORY.md).
+  # Gate: leave disabled until the principal configures an expense inbox.
+  enabled: false
+  archive_label: "Provider Bookings"
+
+messaging:
+  # Delivery transport for cron output. The TOKEN and target chat ids are SECRETS /
+  # per-principal — set in env / MEMORY.md, never here:
+  #   TELEGRAM_BOT_TOKEN     — bot token from @BotFather (env)
+  #   TELEGRAM_HOME_CHANNEL  — operator DM target (env); equals MEMORY.md dm_chat_id
+  #   travel_notify_chat_id  — logistics group (MEMORY.md), arrival alerts only
+  # Channel boundaries (AGENTS.md §7): operator DM = technical/infra only; the
+  # logistics group = arrival-focused. An unset target just means no delivery.
+  enabled: true
+  provider: telegram               # telegram | slack | discord (per MEMORY.md travel_notify_channel)
