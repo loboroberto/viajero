@@ -49,7 +49,7 @@ if [[ ! -d "$CONFIG_DIR" ]]; then
   log "FATAL: $CONFIG_DIR not found — Dockerfile didn't copy hermes-config in."
   exit 1
 fi
-for f in AGENTS.md SOUL.md mcp.json; do
+for f in AGENTS.md SOUL.md mcp.json memory/MEMORY.md memory/USER.md memory/PEERS.md; do
   if [[ ! -f "$CONFIG_DIR/$f" ]]; then
     log "FATAL: $CONFIG_DIR/$f missing — config is incomplete."
     exit 1
@@ -136,58 +136,37 @@ if [[ -d "$CONFIG_DIR/references" ]]; then
 fi
 
 # ----------------------------------------------------------------------------
-# 2. Seed MEMORY.md / USER.md / PEERS.md if absent (agent appends over time).
+# 2. Seed MEMORY.md / USER.md / PEERS.md at the home ROOT if absent.
+#    Templates live in git at $CONFIG_DIR/memory/<name> and are copied to the
+#    home root (NOT a memory/ subdir) — the ROOT convention AGENTS.md §1.1 and
+#    the divergence baseline use. No-clobber so principal edits survive redeploys;
+#    HERMES_FORCE_RESEED=1 overwrites from git. The bytes must match
+#    .seed-manifest.json (which hashes the same $CONFIG_DIR/memory/<name> sources),
+#    so this is a plain copy with no transformation (see tools/divergence_scan.py).
 # ----------------------------------------------------------------------------
-if [[ ! -f "$HOME_DIR/MEMORY.md" ]]; then
-  cat > "$HOME_DIR/MEMORY.md" <<'EOF'
-# MEMORY.md — Curated Semantic Memory
-
-This file is the agent's hand-curated semantic memory (CoALA §4.1, §4.5).
-Stable facts about the user, infrastructure, and codebase, written as
-declarative sentences with sources. Updated by the `coala-reflection` skill
-and by direct user instruction.
-
-## Format
-```
-## <topic>
-- Claim. (Source: episode <id>, <date>.)
-```
-
-## User
-_(empty — populated as the agent learns)_
-
-## Infrastructure
-_(empty — populated as the agent learns)_
-
-## Codebase
-_(empty — populated as the agent learns)_
-EOF
-  log "seeded $HOME_DIR/MEMORY.md"
-fi
-
-if [[ ! -f "$HOME_DIR/USER.md" ]]; then
-  cat > "$HOME_DIR/USER.md" <<'EOF'
-# USER.md — User Model
-
-Dialectic user model (Honcho-style if enabled, otherwise hand-curated).
-What the agent has inferred about the user's preferences, working style,
-and goals. Distinct from MEMORY.md: claims here are *about the user*
-specifically.
-
-_(empty — populated as the agent learns)_
-EOF
-  log "seeded $HOME_DIR/USER.md"
-fi
+for name in MEMORY.md USER.md PEERS.md; do
+  src="$CONFIG_DIR/memory/$name"
+  [[ -f "$src" ]] || continue
+  if [[ "${HERMES_FORCE_RESEED:-0}" == "1" ]]; then
+    cp "$src" "$HOME_DIR/$name"
+    log "re-seeded $HOME_DIR/$name (HERMES_FORCE_RESEED=1)"
+  elif [[ ! -f "$HOME_DIR/$name" ]]; then
+    cp "$src" "$HOME_DIR/$name"
+    log "seeded $HOME_DIR/$name"
+  fi
+done
 
 # Onboarding gate state. The onboarding gate (AGENTS.md §1.1; the `onboarding`
-# skill, added in a later issue) reads/writes this flag; it lives in THIS home
-# (never USER.md, a shared context file) so it gates per-home. No-clobber: an
-# already-onboarded home keeps its flag across reseeds. agentId is the home's
-# basename for /data/hermes/agents/<id>; empty for the main home. Honor
+# skill) reads/writes this flag; it lives in THIS home (never USER.md, a shared
+# context file) so it gates per-home. No-clobber: an already-onboarded home keeps
+# its flag across reseeds. agentId is the home's basename for
+# /data/hermes/agents/<id>; empty for the main home. Honor
 # HERMES_ONBOARDING_STATE_PATH if set (downstream may relocate the gate file);
-# default keeps the per-home layout. NOTE: the JSON shape below (humanOnboarded)
-# is the legacy fleet shape; #10/#3 reconcile it to the onboarding skill's
-# `onboarded` flag when that skill lands.
+# default keeps the per-home layout. The shape below is the canonical `onboarded`
+# family: the gate reader FAILS CLOSED (anything other than onboarded:true is
+# provisional), and the `onboarding` skill overwrites this file wholesale on
+# completion (onboarded:true …), so a legacy `humanOnboarded` volume canonicalizes
+# on its first onboarding run.
 state_file="${HERMES_ONBOARDING_STATE_PATH:-$HOME_DIR/onboarding/state.json}"
 if [[ ! -f "$state_file" ]]; then
   case "$HOME_DIR" in
@@ -197,49 +176,15 @@ if [[ ! -f "$state_file" ]]; then
   mkdir -p "$(dirname "$state_file")"
   cat > "$state_file" <<EOF
 {
-  "humanOnboarded": false,
-  "gateActive": false,
+  "onboarded": false,
+  "profileComplete": false,
+  "configurationFloorComplete": false,
   "agentId": "$agent_id",
   "firstContactAt": null,
-  "onboardedAt": null,
-  "onboardedBy": null,
-  "channel": null
+  "onboardedAt": null
 }
 EOF
-  log "seeded $state_file (humanOnboarded=false)"
-fi
-
-if [[ ! -f "$HOME_DIR/PEERS.md" ]]; then
-  cat > "$HOME_DIR/PEERS.md" <<'EOF'
-# PEERS.md — Peer Agent Model
-
-Semantic memory (CoALA §4.1, §4.5) for other agents the system shares
-work with. Parallel to USER.md but for non-human collaborators. See
-AGENTS.md §6.
-
-Claims here are about specific peers: their identity, declared
-capabilities, observed behavior, trust level, and which channels they
-monitor. Updated by direct user instruction, by the `coala-reflection`
-skill, and by the `group-agent-coordination` skill when a cycle
-produces a durable fact about a peer.
-
-Registered peers in `hermes.toml [[peers.peer]]` are the *declaration*;
-this file is the *experience-grounded* model. They drift apart over time
-— that's expected. Reconcile during reflection.
-
-## Format
-```
-## <peer-id>
-- Declared capabilities: ...
-- Observed behavior: ...
-- Trust: untrusted | scoped | trusted
-- Channels: <ids of channels where this peer is active>
-- Notable episodes: <episode refs or dates>
-```
-
-_(empty — populated as the agent collaborates)_
-EOF
-  log "seeded $HOME_DIR/PEERS.md"
+  log "seeded $state_file (onboarded=false)"
 fi
 
 # ----------------------------------------------------------------------------
