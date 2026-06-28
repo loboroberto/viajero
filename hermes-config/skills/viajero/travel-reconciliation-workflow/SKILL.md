@@ -29,7 +29,10 @@ the skill the `travel-reconciliation-hygiene` cron job runs.
    `-label:<travel_bookings_label>`. Gmail mechanics: `references/gmail-ops.md`.
 2. **Parse** each message with the matching parser skill
    (`parsing-provider-booking-<provider>` or `parsing-corporate-tmc-booking`) into
-   StandardBooking JSON (`references/standard-booking-schema.md`).
+   StandardBooking JSON (`references/standard-booking-schema.md`). When
+   `employer_definition_file` is set, an email matching the active employer definition's
+   assignment senders/codes is routed to `parsing-employer-assignment` instead (skip this
+   branch entirely for personal-only travelers — no employer configured).
 3. **Reconcile** every StandardBooking with `managing-calendar-travel` — dedup by the
    RFC 822 `Message-ID` (update, never duplicate), with colors / time format / raw URLs
    per `references/calendar-conventions.md`.
